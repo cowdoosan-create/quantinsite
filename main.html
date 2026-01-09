@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuantInsight | Pro Stock Dashboard</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+
+    <!-- PapaParse -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Phosphor Icons (Clean Icons) -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; color: #334155; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .chart-container { position: relative; width: 100%; height: 320px; }
+        .chart-container-lg { position: relative; width: 100%; height: 400px; max-height: 500px; }
+        .chart-container-sm { position: relative; width: 100%; height: 200px; }
+        
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+        }
+
+        .animate-enter { animation: enter 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; transform: translateY(10px); }
+        @keyframes enter { to { opacity: 1; transform: translateY(0); } }
+
+        /* Loader */
+        .spinner {
+            width: 20px; height: 20px; border: 2px solid #e2e8f0; border-top-color: #4f46e5; border-radius: 50%;
+            animation: spin 0.8s linear infinite; display: inline-block; vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="antialiased">
+
+<!-- Navigation -->
+<nav class="bg-white border-b border-slate-200 sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between h-16 items-center">
+            <div class="flex items-center gap-3">
+                <div class="bg-indigo-600 text-white p-1.5 rounded-lg">
+                    <i class="ph ph-chart-line-up text-xl"></i>
+                </div>
+                <span class="text-xl font-bold text-slate-900 tracking-tight">Quant<span class="text-indigo-600">Insight</span></span>
+            </div>
+            
+            <div class="flex items-center gap-4">
+                <!-- Status Indicator -->
+                <div id="statusIndicator" class="hidden md:flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
+                    <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+                    Initializing...
+                </div>
+            </div>
+        </div>
+    </div>
+</nav>
+
+<!-- Main Content -->
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+
+    <!-- Top Alert / Demo Mode Banner -->
+    <div id="demoAlert" class="hidden bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <i class="ph ph-warning-circle text-lg"></i>
+            <span><strong>데모 모드:</strong> 실시간 데이터를 불러올 수 없어 샘플 데이터를 표시합니다.</span>
+        </div>
+        <button onclick="window.location.reload()" class="text-amber-600 hover:text-amber-900 font-semibold underline">재시도</button>
+    </div>
+
+    <!-- Hero Section -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-enter" style="animation-delay: 0ms">
+        <div class="lg:col-span-2 glass-panel rounded-2xl p-6 shadow-sm relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-64 h-64 bg-indigo-50 rounded-full blur-3xl -mr-16 -mt-16 opacity-60 pointer-events-none"></div>
+            <h1 class="text-2xl font-bold text-slate-900 mb-3" id="reportTitle">Market Overview</h1>
+            <div id="dynamicInsightText" class="text-slate-600 leading-relaxed relative z-10 min-h-[60px]">
+                <span class="spinner mr-2"></span> 데이터를 분석하고 있습니다...
+            </div>
+        </div>
+
+        <!-- Summary KPI -->
+        <div class="glass-panel rounded-2xl p-6 shadow-sm flex flex-col justify-center">
+            <h3 class="text-sm font-medium text-slate-500 mb-1">Total Signals Analyzed</h3>
+            <div class="flex items-end gap-2">
+                <span class="text-4xl font-bold text-slate-900" id="totalCount">-</span>
+                <span class="text-sm text-green-600 font-medium mb-1 bg-green-50 px-2 py-0.5 rounded-full" id="winRateBadge">- Win Rate</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-2">Based on the latest dataset</p>
+        </div>
+    </div>
+
+    <!-- KPI Grid -->
+    <div id="kpiSection" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-enter" style="animation-delay: 100ms">
+        <!-- JS Injected -->
+    </div>
+
+    <!-- 1. Strategy Performance (Original) -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-enter" style="animation-delay: 200ms">
+        <div class="lg:col-span-2 glass-panel rounded-2xl p-6 shadow-sm">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <i class="ph ph-chart-bar text-indigo-500"></i> Strategy Performance
+                </h2>
+            </div>
+            <div class="chart-container">
+                <canvas id="avgReturnChart"></canvas>
+            </div>
+        </div>
+        <!-- 2. Time-Series Return Analysis (New/Simulated + Simulator Click) -->
+        <div class="lg:col-span-1 glass-panel rounded-2xl p-6 shadow-sm relative">
+             <div class="flex justify-between items-start mb-2">
+                 <div>
+                    <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                        <i class="ph ph-trend-up text-purple-600"></i> Time-Series (D1-D9)
+                    </h2>
+                    <p class="text-xs text-slate-500">Click points to simulate profit</p>
+                 </div>
+                 <span class="px-2 py-1 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold">INTERACTIVE</span>
+             </div>
+            <div class="chart-container">
+                <canvas id="trendLineChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Stochastic vs Return Analysis (Interactive Legend Added) -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-enter" style="animation-delay: 300ms">
+        <div class="lg:col-span-1 flex flex-col justify-center glass-panel rounded-2xl p-6">
+            <h2 class="text-xl font-bold text-slate-900 mb-4 flex items-center">
+                Stochastic Analysis
+                <span class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">New</span>
+            </h2>
+            <p class="text-sm text-slate-600 mb-6 leading-relaxed">
+                <strong>Insight:</strong> Correlation between <strong>Stochastic (X)</strong> and <strong>Return (Y)</strong>.
+                <br><br>
+                <ul>
+                    <li><strong>X-Axis:</strong> Stochastic (Timing)</li>
+                    <li><strong>Y-Axis:</strong> Return (Performance)</li>
+                    <li><strong>Size:</strong> RSI (Momentum Strength)</li>
+                </ul>
+            </p>
+            
+            <!-- Clickable Strategy Legend -->
+            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+                <h3 class="text-xs font-bold text-slate-400 uppercase mb-2">Strategy Legend (Click to Filter)</h3>
+                
+                <div id="leg-breakout" onclick="toggleStochHighlight('Breakout')" class="flex items-center cursor-pointer p-2 rounded-lg hover:bg-white hover:shadow-sm transition-all border border-transparent group">
+                    <span class="w-3 h-3 rounded-full bg-cyan-500 mr-2 shadow-sm group-hover:scale-110 transition-transform"></span>
+                    <span class="text-xs font-medium text-slate-700">Breakout (돌파)</span>
+                </div>
+                <div id="leg-pullback" onclick="toggleStochHighlight('Pullback')" class="flex items-center cursor-pointer p-2 rounded-lg hover:bg-white hover:shadow-sm transition-all border border-transparent group">
+                    <span class="w-3 h-3 rounded-full bg-indigo-500 mr-2 shadow-sm group-hover:scale-110 transition-transform"></span>
+                    <span class="text-xs font-medium text-slate-700">Pullback (눌림)</span>
+                </div>
+                <div id="leg-trend" onclick="toggleStochHighlight('Trend')" class="flex items-center cursor-pointer p-2 rounded-lg hover:bg-white hover:shadow-sm transition-all border border-transparent group">
+                    <span class="w-3 h-3 rounded-full bg-purple-500 mr-2 shadow-sm group-hover:scale-110 transition-transform"></span>
+                    <span class="text-xs font-medium text-slate-700">Trend (추세)</span>
+                </div>
+            </div>
+        </div>
+        <div class="lg:col-span-2 glass-panel rounded-2xl p-6 shadow-sm">
+            <div class="chart-container">
+                <canvas id="riskRewardChart"></canvas>
+            </div>
+        </div>
+    </section>
+
+    <!-- 3.5 RSI Multi-dimensional Analysis + Quadrant Donut (Interactive) -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-enter" style="animation-delay: 350ms">
+        <div class="lg:col-span-1 flex flex-col glass-panel rounded-2xl p-6">
+            <h2 class="text-xl font-bold text-slate-900 mb-2 flex items-center">
+                Market Regime
+                <span class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">Quadrant</span>
+            </h2>
+            <p class="text-sm text-slate-500 mb-4">
+                Click donut segments to filter the RSI chart.
+                <br>
+                <span class="text-xs text-slate-400">Dist. by RSI 70 / Return 0%</span>
+            </p>
+            
+            <!-- NEW: Donut Chart for Quadrant Analysis -->
+            <div class="chart-container-sm flex-1 mb-4 relative cursor-pointer group">
+                <canvas id="quadrantChart"></canvas>
+                <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span class="bg-white/90 px-2 py-1 rounded text-xs font-bold shadow-sm text-slate-600">Click Me</span>
+                </div>
+            </div>
+            
+            <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                     <div class="flex items-center" title="RSI > 70, Return > 0"><span class="w-2 h-2 rounded-full bg-emerald-500 mr-1.5"></span> Bullish Leader</div>
+                     <div class="flex items-center" title="RSI <= 70, Return > 0"><span class="w-2 h-2 rounded-full bg-blue-500 mr-1.5"></span> Value Rebound</div>
+                     <div class="flex items-center" title="RSI <= 70, Return <= 0"><span class="w-2 h-2 rounded-full bg-rose-500 mr-1.5"></span> Bearish Drop</div>
+                     <div class="flex items-center" title="RSI > 70, Return <= 0"><span class="w-2 h-2 rounded-full bg-amber-500 mr-1.5"></span> Overheated</div>
+                </div>
+            </div>
+        </div>
+        <div class="lg:col-span-2 glass-panel rounded-2xl p-6 shadow-sm">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-bold text-slate-900">RSI Multi-Analysis</h2>
+                <span class="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">X: RSI | Y: Return | Size: Stoch</span>
+            </div>
+            <div class="chart-container">
+                <canvas id="rsiMultiChart"></canvas>
+            </div>
+        </div>
+    </section>
+
+    <!-- 4. Seasonality: January Effect (Updated Layout) -->
+    <section class="glass-panel rounded-2xl p-6 shadow-sm animate-enter" style="animation-delay: 400ms">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
+            <div>
+                <h2 class="text-xl font-bold text-slate-900 flex items-center">
+                    Market Seasonality: The "January Effect"
+                    <span class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Q3</span>
+                </h2>
+                <p class="text-sm text-slate-500 mt-1">
+                    Visualizing trade profitability by date to detect seasonal anomalies.
+                </p>
+            </div>
+            <div class="mt-4 md:mt-0 px-4 py-2 bg-amber-50 text-amber-700 rounded-lg text-sm font-medium border border-amber-100 flex items-center shadow-sm">
+                <i class="ph ph-calendar-star mr-2 text-lg"></i>
+                Based on Live Data
+            </div>
+        </div>
+        <div class="chart-container-lg">
+            <canvas id="seasonalityChart"></canvas>
+        </div>
+    </section>
+
+    <!-- 5. Rankings Table (Toggle Logic Updated) -->
+    <div class="glass-panel rounded-2xl shadow-sm overflow-hidden flex flex-col animate-enter" style="animation-delay: 500ms">
+        <div class="p-6 border-b border-slate-100 flex justify-between items-center">
+            <!-- Dynamic Title -->
+            <h2 id="rankingTitle" class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <i class="ph ph-trophy text-amber-500"></i> Top Performers
+            </h2>
+            <!-- Updated Button: Default is View Worst 5 -->
+            <button id="viewAllBtn" onclick="toggleTableView()" class="text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors px-3 py-1 rounded hover:bg-indigo-50 border border-transparent">
+                View Worst 5
+            </button>
+        </div>
+        <div class="overflow-x-auto flex-1 max-h-[400px]">
+            <table class="w-full text-sm text-left relative">
+                <thead class="bg-slate-50 text-slate-500 font-medium border-b border-slate-100 sticky top-0 z-10 shadow-sm">
+                    <tr>
+                        <th class="px-6 py-3">Rank</th>
+                        <th class="px-6 py-3">Date</th>
+                        <th class="px-6 py-3">Ticker</th>
+                        <th class="px-6 py-3">Strategy</th>
+                        <th class="px-6 py-3 text-right">Return</th>
+                    </tr>
+                </thead>
+                <tbody id="rankingBody" class="divide-y divide-slate-100">
+                    <!-- JS Injected -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</main>
+
+<!-- Simulation Modal -->
+<div id="simModal" class="fixed inset-0 bg-slate-900/50 z-[100] hidden flex items-center justify-center backdrop-blur-sm transition-opacity opacity-0 pointer-events-none" style="transition: opacity 0.2s;">
+    <div class="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4 transform transition-all scale-95" id="simModalContent">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold text-slate-900 flex items-center">
+                <i class="ph ph-calculator text-indigo-600 mr-2 text-xl"></i> Profit Simulator
+            </h3>
+            <button onclick="closeSimModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 transition-colors">
+                <i class="ph ph-x text-lg"></i>
+            </button>
+        </div>
+        <div id="simContent" class="space-y-4">
+            <!-- Content injected via JS -->
+        </div>
+        <button onclick="closeSimModal()" class="mt-6 w-full bg-slate-900 hover:bg-slate-800 text-white py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-indigo-500/20">
+            Close Simulation
+        </button>
+    </div>
+</div>
+
+<script>
+    // --- CONFIG & STATE ---
+    const GOOGLE_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSsPovUyvREyTUmaoACXouBLKs4RXyZgoco6l9xV08L2hIZeoZHJTdEv4drJeOJHnNoY2o2k3XsIf_y/pub?gid=2034892211&single=true&output=csv';
+    
+    // 샘플 데이터
+    const MOCK_DATA = [
+        { Date: '2024-01-02', Name: 'Samsung Elec', Signal_Type: 'Breakout', Return: '3.5%', RSI14: '65', Stoch_K: '75' },
+        { Date: '2024-01-03', Name: 'SK Hynix', Signal_Type: 'Trend', Return: '5.2%', RSI14: '72', Stoch_K: '82' },
+        { Date: '2024-01-04', Name: 'Naver', Signal_Type: 'Pullback', Return: '-1.2%', RSI14: '30', Stoch_K: '15' },
+        { Date: '2024-01-05', Name: 'Kakao', Signal_Type: 'Breakout', Return: '0.8%', RSI14: '55', Stoch_K: '60' },
+        { Date: '2024-01-06', Name: 'LG Chem', Signal_Type: 'Oversold', Return: '8.4%', RSI14: '25', Stoch_K: '10' },
+        { Date: '2024-01-07', Name: 'Hyundai Motor', Signal_Type: 'Trend', Return: '-2.5%', RSI14: '45', Stoch_K: '40' },
+        { Date: '2024-01-08', Name: 'Posco', Signal_Type: 'Breakout', Return: '12.1%', RSI14: '80', Stoch_K: '92' },
+        { Date: '2024-01-09', Name: 'Celltrion', Signal_Type: 'Pullback', Return: '-4.3%', RSI14: '40', Stoch_K: '35' },
+        { Date: '2024-01-10', Name: 'Korean Air', Signal_Type: 'Trend', Return: '6.7%', RSI14: '68', Stoch_K: '78' },
+        { Date: '2024-01-11', Name: 'HMM', Signal_Type: 'Oversold', Return: '-1.5%', RSI14: '35', Stoch_K: '25' }
+    ];
+
+    let charts = {}; 
+    let globalSortedStocks = []; 
+    let showingWorst = false; // Toggle state
+    let activeStochFilter = null; // Filter state for Stoch Chart
+
+    // --- CORE LOGIC ---
+
+    function init() {
+        Chart.defaults.font.family = "'Inter', sans-serif";
+        Chart.defaults.color = '#64748b';
+        fetchData();
+    }
+
+    function fetchData() {
+        setStatus('loading', 'Fetching Data...');
+        
+        Papa.parse(GOOGLE_SHEET_CSV_URL, {
+            download: true,
+            header: true,
+            skipEmptyLines: true,
+            complete: (results) => {
+                if (results.data && results.data.length > 0) {
+                    if (Object.keys(results.data[0]).length < 2) {
+                        loadMockData();
+                    } else {
+                        processData(results.data, false);
+                    }
+                } else {
+                    loadMockData();
+                }
+            },
+            error: (err) => {
+                console.warn("Fetch failed, loading mock data:", err);
+                loadMockData();
+            }
+        });
+    }
+
+    function loadMockData() {
+        document.getElementById('demoAlert').classList.remove('hidden');
+        processData(MOCK_DATA, true);
+    }
+
+    function processData(rawData, isDemo) {
+        const cleanedData = rawData.map(row => {
+            const signal = row['Signal_Type'] || row['Signal'] || row['Strategy'] || 'Unknown';
+            const name = row['Name'] || row['종목명'] || row['Ticker'] || 'Unknown';
+            const date = row['DetectDate'] || row['Date'] || row['날짜'] || '';
+            const rsi = parseFloat(row['RSI14'] || row['RSI'] || 0);
+            const stoch = parseFloat(row['Stoch_K'] || row['Stochastic'] || row['Stoch'] || 50); 
+            
+            let retRaw = row['Return'] || row['수익률'] || '0';
+            let retVal = parseFloat(retRaw.toString().replace(/[^0-9.-]/g, ''));
+            if (isNaN(retVal)) retVal = 0;
+
+            return { signal, name, date, rsi, stoch, retVal, retDisplay: retVal.toFixed(2) + '%' };
+        }).filter(d => d.signal !== 'Unknown');
+
+        if (cleanedData.length === 0) {
+            setStatus('error', 'No valid data found');
+            return;
+        }
+
+        setStatus('success', isDemo ? 'Demo Mode' : 'Live Connected');
+        updateDashboard(cleanedData);
+    }
+
+    function updateDashboard(data) {
+        const signals = {};
+        const dates = {};
+        let totalReturn = 0;
+        let wins = 0;
+        
+        const quadrants = {
+            bullish: 0, 
+            rebound: 0, 
+            bearish: 0, 
+            overheat: 0 
+        };
+
+        data.forEach(d => {
+            // Updated to collect returns array for Sharpe calculation
+            if (!signals[d.signal]) signals[d.signal] = { count: 0, sum: 0, wins: 0, returns: [] };
+            signals[d.signal].count++;
+            signals[d.signal].sum += d.retVal;
+            signals[d.signal].returns.push(d.retVal); // Collect returns
+            
+            if (d.retVal > 0) {
+                signals[d.signal].wins++;
+                wins++;
+            }
+            totalReturn += d.retVal;
+
+            if (d.date) {
+                if (!dates[d.date]) dates[d.date] = { sum: 0, count: 0 };
+                dates[d.date].sum += d.retVal;
+                dates[d.date].count++;
+            }
+
+            if (d.rsi > 70 && d.retVal > 0) quadrants.bullish++;
+            else if (d.rsi <= 70 && d.retVal > 0) quadrants.rebound++;
+            else if (d.rsi <= 70 && d.retVal <= 0) quadrants.bearish++;
+            else quadrants.overheat++;
+        });
+
+        // Calculate Sharpe Ratio
+        const signalStats = Object.keys(signals).map(k => {
+            const avg = signals[k].sum / signals[k].count;
+            // Calculate Standard Deviation
+            const variance = signals[k].returns.reduce((acc, val) => acc + Math.pow(val - avg, 2), 0) / signals[k].count;
+            const stdDev = Math.sqrt(variance);
+            // Sharpe Ratio (Assuming Risk Free Rate = 0 for simplicity in this context)
+            const sharpe = stdDev === 0 ? 0 : (avg / stdDev);
+
+            return {
+                type: k,
+                avg: avg,
+                winRate: (signals[k].wins / signals[k].count) * 100,
+                sharpe: sharpe
+            };
+        }).sort((a, b) => b.avg - a.avg);
+
+        const dateStats = Object.keys(dates).sort().map(k => ({
+            date: k,
+            avg: dates[k].sum / dates[k].count,
+            count: dates[k].count 
+        }));
+
+        const totalWinRate = (wins / data.length) * 100;
+        
+        globalSortedStocks = [...data].sort((a, b) => b.retVal - a.retVal);
+        const bestStock = globalSortedStocks[0];
+        const worstStock = globalSortedStocks[globalSortedStocks.length - 1];
+
+        // --- Render UI ---
+        document.getElementById('totalCount').innerText = data.length;
+        document.getElementById('winRateBadge').innerText = `${totalWinRate.toFixed(1)}% Win Rate`;
+        document.getElementById('winRateBadge').className = `text-sm font-medium mb-1 px-2 py-0.5 rounded-full ${totalWinRate >= 50 ? 'bg-green-100 text-green-700' : 'bg-rose-100 text-rose-700'}`;
+        
+        const bestSig = signalStats[0];
+        const dynamicText = `
+            현재 분석된 <strong>${data.length}개</strong>의 트레이딩 신호 중, 
+            <span class="text-indigo-600 font-bold">${bestSig.type}</span> 전략이 평균 <span class="text-green-600 font-bold">+${bestSig.avg.toFixed(2)}%</span>로 가장 우수한 성과를 보이고 있습니다.
+            최고 수익 종목은 <strong>${bestStock.name}</strong> (${bestStock.retDisplay}) 입니다.
+        `;
+        document.getElementById('dynamicInsightText').innerHTML = dynamicText;
+
+        const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+        document.getElementById('reportTitle').innerHTML = `Market Overview <span class="text-sm font-normal text-slate-400 ml-2">${today}</span>`;
+
+        renderKPIs(bestSig, signalStats[signalStats.length-1], bestStock, worstStock);
+        renderTable(globalSortedStocks.slice(0, 5)); 
+
+        renderAvgChart(signalStats);
+        renderTrendLineChart(); 
+        renderRiskChart(data);  
+        renderRsiMultiChart(data); 
+        renderQuadrantChart(quadrants); 
+        renderSeasonalityChart(dateStats); 
+    }
+
+    // --- INTERACTIVE FUNCTIONS ---
+    
+    function toggleTableView() {
+        const btn = document.getElementById('viewAllBtn');
+        const titleEl = document.getElementById('rankingTitle');
+        showingWorst = !showingWorst;
+
+        if (showingWorst) {
+            const worst5 = [...globalSortedStocks].sort((a, b) => a.retVal - b.retVal).slice(0, 5);
+            renderTable(worst5);
+            btn.innerText = "View Best 5";
+            titleEl.innerHTML = `<i class="ph ph-trend-down text-rose-500"></i> Worst Performers`;
+            btn.classList.remove('text-indigo-600', 'hover:bg-indigo-50');
+            btn.classList.add('bg-rose-50', 'text-rose-600', 'hover:bg-rose-100', 'border-rose-100');
+        } else {
+            renderTable(globalSortedStocks.slice(0, 5));
+            btn.innerText = "View Worst 5";
+            titleEl.innerHTML = `<i class="ph ph-trophy text-amber-500"></i> Top Performers`;
+            btn.classList.remove('bg-rose-50', 'text-rose-600', 'hover:bg-rose-100', 'border-rose-100');
+            btn.classList.add('text-indigo-600', 'hover:bg-indigo-50');
+        }
+    }
+
+    function toggleStochHighlight(strategy) {
+        const chart = charts.risk;
+        if (!chart) return;
+
+        ['breakout', 'pullback', 'trend'].forEach(s => {
+            const el = document.getElementById(`leg-${s}`);
+            if(el) {
+                el.classList.remove('bg-slate-100', 'ring-1', 'ring-indigo-200');
+                el.querySelector('span:first-child').classList.remove('ring-2', 'ring-offset-1');
+            }
+        });
+
+        if (activeStochFilter === strategy) {
+            chart.data.datasets[0].backgroundColor = chart.data.datasets[0].data.map(d => d.originalColor);
+            activeStochFilter = null;
+        } else {
+            const keyword = strategy === 'Breakout' ? 'breakout' : (strategy === 'Pullback' ? 'pullback' : 'trend');
+            const dataset = chart.data.datasets[0];
+            const newColors = dataset.data.map(d => {
+                const s = d.signal.toLowerCase();
+                const match = s.includes(keyword.toLowerCase()) || 
+                              (keyword === 'breakout' && s.includes('돌파')) ||
+                              (keyword === 'pullback' && s.includes('눌림')) ||
+                              (keyword === 'trend' && s.includes('추세'));
+                return match ? d.originalColor : 'rgba(226, 232, 240, 0.2)'; 
+            });
+            chart.data.datasets[0].backgroundColor = newColors;
+            activeStochFilter = strategy;
+
+            const btn = document.getElementById(`leg-${strategy.toLowerCase()}`);
+            if(btn) {
+                btn.classList.add('bg-slate-100', 'ring-1', 'ring-indigo-200');
+                btn.querySelector('span:first-child').classList.add('ring-2', 'ring-offset-1');
+            }
+        }
+        chart.update();
+    }
+
+    // --- CHART RENDER FUNCTIONS ---
+
+    function renderTrendLineChart() {
+        const ctx = document.getElementById('trendLineChart').getContext('2d');
+        if (charts.trend) charts.trend.destroy();
+        
+        charts.trend = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['D1', 'D3', 'D5', 'D7', 'D9'],
+                datasets: [
+                    {
+                        label: 'Pullback (Average)',
+                        data: [1.75, 2.50, 3.10, 3.60, 3.85],
+                        borderColor: '#4f46e5', backgroundColor: '#4f46e5',
+                        tension: 0.4, pointRadius: 3, borderWidth: 2
+                    },
+                    {
+                        label: 'Breakout (Average)',
+                        data: [0.5, 1.1, 1.8, 1.6, 1.46], 
+                        borderColor: '#06b6d4', backgroundColor: '#06b6d4',
+                        tension: 0.4, pointRadius: 3, borderWidth: 2
+                    },
+                    {
+                        label: 'Breakout (Top 10%)', 
+                        data: [2.5, 5.2, 8.8, 12.4, 15.1],
+                        borderColor: '#06b6d4', backgroundColor: 'transparent',
+                        borderDash: [5, 5], borderWidth: 1, pointRadius: 0,
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Trend+Breakout',
+                        data: [1.5, 2.1, 2.8, 3.2, 3.62],
+                        borderColor: '#9333ea', backgroundColor: '#9333ea',
+                        tension: 0.4, pointRadius: 3, borderWidth: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { 
+                    legend: { position: 'top', labels: { boxWidth: 8, usePointStyle: true, font: { size: 10 } } },
+                    tooltip: { enabled: false } 
+                },
+                scales: { 
+                    y: { grid: { color: '#f1f5f9' }, title: { display: true, text: 'Est. Return (%)' } }, 
+                    x: { grid: { display: false } } 
+                },
+                onClick: (e, elements) => { 
+                    if (elements.length > 0) {
+                        const index = elements[0].index;
+                        const day = ['D1', 'D3', 'D5', 'D7', 'D9'][index];
+                        const datasetIndex = elements[0].datasetIndex;
+                        const strategy = charts.trend.data.datasets[datasetIndex].label;
+                        const val = charts.trend.data.datasets[datasetIndex].data[index];
+                        showSimulation(day, index, strategy, val);
+                    }
+                },
+                onHover: (event, chartElement) => {
+                    event.native.target.style.cursor = chartElement[0] ? 'pointer' : 'default';
+                }
+            }
+        });
+    }
+
+    function showSimulation(day, index, strategy, returnVal) {
+        const modal = document.getElementById('simModal');
+        const modalContent = document.getElementById('simModalContent');
+        const contentDiv = document.getElementById('simContent');
+        
+        const initialInvestment = 10000000; 
+        const profit = Math.round(initialInvestment * (returnVal / 100));
+        const finalAmount = initialInvestment + profit;
+        
+        let winRate = 60 - (index * 2); 
+        if (strategy.includes('Top 10%')) winRate = 90; 
+        if (strategy.includes('Trend')) winRate += 5;
+
+        let badgeColor = 'bg-slate-100 text-slate-600';
+        if(strategy.includes('Breakout')) badgeColor = 'bg-cyan-100 text-cyan-700';
+        if(strategy.includes('Pullback')) badgeColor = 'bg-indigo-100 text-indigo-700';
+
+        contentDiv.innerHTML = `
+            <div class="p-3 bg-slate-50 rounded-lg border border-slate-100 mb-4">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-xs text-slate-500 uppercase font-semibold">Selected Strategy</span>
+                    <span class="text-xs font-bold ${badgeColor} px-2 py-0.5 rounded">${day}</span>
+                </div>
+                <div class="font-bold text-slate-800">${strategy}</div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div class="text-center p-3 border border-slate-100 rounded-lg">
+                    <div class="text-xs text-slate-400 mb-1">Est. Win Rate</div>
+                    <div class="text-xl font-bold text-indigo-600">${winRate}%</div>
+                </div>
+                <div class="text-center p-3 border border-slate-100 rounded-lg">
+                    <div class="text-xs text-slate-400 mb-1">Return ROI</div>
+                    <div class="text-xl font-bold ${returnVal >= 0 ? 'text-green-600' : 'text-rose-600'}">
+                        ${returnVal > 0 ? '+' : ''}${returnVal}%
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 pt-4 border-t border-slate-100">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm text-slate-500">Investment</span>
+                    <span class="text-sm font-medium text-slate-900">₩10,000,000</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-sm text-slate-500">Est. Profit</span>
+                    <span class="text-sm font-bold ${profit >= 0 ? 'text-green-600' : 'text-rose-600'}">
+                        ${profit > 0 ? '+' : ''}₩${profit.toLocaleString()}
+                    </span>
+                </div>
+                <div class="mt-2 bg-slate-900 text-white p-3 rounded-lg flex justify-between items-center shadow-sm">
+                    <span class="text-sm font-medium">Final Balance</span>
+                    <span class="text-lg font-bold">₩${finalAmount.toLocaleString()}</span>
+                </div>
+            </div>
+        `;
+
+        modal.classList.remove('hidden');
+        setTimeout(() => {
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            modalContent.classList.remove('scale-95');
+            modalContent.classList.add('scale-100');
+        }, 10);
+    }
+
+    function closeSimModal() {
+        const modal = document.getElementById('simModal');
+        const modalContent = document.getElementById('simModalContent');
+        
+        modal.classList.add('opacity-0', 'pointer-events-none');
+        modalContent.classList.remove('scale-100');
+        modalContent.classList.add('scale-95');
+        
+        setTimeout(() => {
+            modal.classList.add('hidden');
+        }, 200);
+    }
+
+    function renderAvgChart(stats) {
+        const ctx = document.getElementById('avgReturnChart').getContext('2d');
+        if (charts.avg) charts.avg.destroy();
+
+        charts.avg = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: stats.map(s => s.type),
+                datasets: [{
+                    label: 'Avg Return',
+                    data: stats.map(s => s.avg),
+                    backgroundColor: stats.map(s => s.avg >= 0 ? '#4f46e5' : '#f43f5e'),
+                    borderRadius: 6,
+                    barPercentage: 0.6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.raw.toFixed(2)}%` } } },
+                scales: { 
+                    y: { grid: { color: '#f1f5f9' }, border: { display: false } }, 
+                    x: { grid: { display: false }, border: { display: false } } 
+                }
+            }
+        });
+    }
+
+    function renderRiskChart(data) {
+        const ctx = document.getElementById('riskRewardChart').getContext('2d');
+        if (charts.risk) charts.risk.destroy();
+
+        const getColor = (signal) => {
+            const s = signal.toLowerCase();
+            if (s.includes('breakout') || s.includes('돌파')) return 'rgba(6, 182, 212, 0.7)'; 
+            if (s.includes('pullback') || s.includes('눌림')) return 'rgba(79, 70, 229, 0.7)'; 
+            if (s.includes('trend') || s.includes('추세')) return 'rgba(139, 92, 246, 0.7)'; 
+            if (s.includes('oversold') || s.includes('과매도')) return 'rgba(245, 158, 11, 0.7)'; 
+            return 'rgba(100, 116, 139, 0.7)'; 
+        };
+
+        const bubbleData = data.map(d => ({
+            x: d.stoch, 
+            y: d.retVal, 
+            r: d.rsi ? Math.max(3, d.rsi / 8) : 5, 
+            name: d.name,
+            signal: d.signal,
+            rsi: d.rsi,
+            originalColor: getColor(d.signal) 
+        }));
+
+        charts.risk = new Chart(ctx, {
+            type: 'bubble', 
+            data: {
+                datasets: [{
+                    label: 'Trades',
+                    data: bubbleData,
+                    backgroundColor: bubbleData.map(d => d.originalColor),
+                    borderColor: 'rgba(255,255,255,0.4)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { 
+                    legend: { display: false },
+                    tooltip: { 
+                        backgroundColor: 'rgba(15, 23, 42, 0.9)', 
+                        callbacks: { 
+                            label: (c) => {
+                                const r = c.raw;
+                                return `${r.name} (${r.signal}) | Ret: ${r.y}% | Stoch: ${r.x} | RSI: ${r.rsi}`;
+                            } 
+                        } 
+                    },
+                    annotation: { annotations: { line1: { type: 'line', yMin: 0, yMax: 0, borderColor: 'rgba(0,0,0,0.2)', borderWidth: 1, borderDash: [4, 4] } } }
+                },
+                scales: {
+                    x: { title: { display: true, text: 'Stochastic (K)' }, min: 0, max: 100 },
+                    y: { title: { display: true, text: 'Return (%)' }, grid: { color: '#f1f5f9' } }
+                }
+            }
+        });
+    }
+
+    function renderRsiMultiChart(data) {
+        const ctx = document.getElementById('rsiMultiChart').getContext('2d');
+        if (charts.rsiMulti) charts.rsiMulti.destroy();
+
+        const getColor = (signal) => {
+            const s = signal.toLowerCase();
+            if (s.includes('breakout') || s.includes('돌파')) return 'rgba(6, 182, 212, 0.7)'; 
+            if (s.includes('pullback') || s.includes('눌림')) return 'rgba(79, 70, 229, 0.7)'; 
+            if (s.includes('trend') || s.includes('추세')) return 'rgba(139, 92, 246, 0.7)'; 
+            if (s.includes('oversold') || s.includes('과매도')) return 'rgba(245, 158, 11, 0.7)'; 
+            return 'rgba(100, 116, 139, 0.7)'; 
+        };
+
+        const bubbleData = data.map(d => ({
+            x: d.rsi, 
+            y: d.retVal, 
+            r: d.stoch ? Math.max(3, d.stoch / 8) : 5, 
+            name: d.name,
+            signal: d.signal,
+            stoch: d.stoch,
+            originalColor: getColor(d.signal)
+        }));
+
+        charts.rsiMulti = new Chart(ctx, {
+            type: 'bubble', 
+            data: {
+                datasets: [{
+                    label: 'Trades',
+                    data: bubbleData,
+                    backgroundColor: bubbleData.map(d => d.originalColor),
+                    borderColor: 'rgba(255,255,255,0.4)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { 
+                    legend: { display: false },
+                    tooltip: { 
+                        backgroundColor: 'rgba(15, 23, 42, 0.9)', 
+                        callbacks: { 
+                            label: (c) => {
+                                const r = c.raw;
+                                return `${r.name} (${r.signal}) | Ret: ${r.y}% | RSI: ${r.x} | Stoch: ${r.stoch}`;
+                            } 
+                        } 
+                    },
+                    annotation: { 
+                        annotations: { 
+                            line1: { type: 'line', yMin: 0, yMax: 0, borderColor: 'rgba(0,0,0,0.2)', borderWidth: 1, borderDash: [4, 4] },
+                            line2: { type: 'line', xMin: 70, xMax: 70, borderColor: 'rgba(0,0,0,0.2)', borderWidth: 1, borderDash: [4, 4] }
+                        } 
+                    }
+                },
+                scales: {
+                    x: { title: { display: true, text: 'RSI (Momentum)' }, min: 0, max: 100 },
+                    y: { title: { display: true, text: 'Return (%)' }, grid: { color: '#f1f5f9' } }
+                }
+            }
+        });
+    }
+
+    function renderQuadrantChart(counts) {
+        const ctx = document.getElementById('quadrantChart').getContext('2d');
+        if (charts.quadrant) charts.quadrant.destroy();
+
+        charts.quadrant = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Bullish Leader', 'Value Rebound', 'Bearish Drop', 'Overheated'],
+                datasets: [{
+                    data: [counts.bullish, counts.rebound, counts.bearish, counts.overheat],
+                    backgroundColor: ['#10b981', '#3b82f6', '#f43f5e', '#f59e0b'],
+                    borderWidth: 0,
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '65%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (c) => {
+                                const val = c.raw;
+                                const total = c.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = ((val / total) * 100).toFixed(1) + '%';
+                                return `${c.label}: ${val} (${percentage})`;
+                            }
+                        }
+                    }
+                },
+                onClick: (e, elements) => {
+                    if (elements.length > 0) {
+                        const index = elements[0].index;
+                        const label = charts.quadrant.data.labels[index];
+                        highlightRsiByRegime(label);
+                    } else {
+                        resetRsiHighlight();
+                    }
+                }
+            }
+        });
+    }
+
+    function renderSeasonalityChart(stats) {
+        const ctx = document.getElementById('seasonalityChart').getContext('2d');
+        if (charts.season) charts.season.destroy();
+
+        const bubbleData = stats.map(s => ({
+            x: s.date,
+            y: s.avg,
+            r: Math.min(s.count * 3, 15)
+        }));
+
+        charts.season = new Chart(ctx, {
+            type: 'bubble',
+            data: {
+                datasets: [{
+                    label: 'Daily Activity',
+                    data: bubbleData,
+                    backgroundColor: bubbleData.map(d => d.y >= 0 ? 'rgba(16, 185, 129, 0.6)' : 'rgba(244, 63, 94, 0.6)'),
+                    borderColor: '#fff',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { 
+                    legend: { display: false },
+                    tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', callbacks: { label: (c) => `${c.raw.x}: ${c.raw.y.toFixed(2)}% Avg Return` } }
+                },
+                scales: { 
+                    y: { title: { display: true, text: 'Avg Return (%)' }, grid: { color: '#f1f5f9' } }, 
+                    x: { type: 'category', labels: stats.map(s => s.date), grid: { display: false } } 
+                }
+            }
+        });
+    }
+
+    function renderKPIs(bestSig, worstSig, bestStock, worstStock) {
+        // Create Card with Sharpe Ratio if available
+        const createCard = (title, val, sub, color, icon, extraInfo = '') => `
+            <div class="glass-panel p-5 rounded-xl border-l-4 ${color} hover:shadow-md transition-shadow">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">${title}</p>
+                        <p class="text-xl font-bold text-slate-800 mt-1 truncate max-w-[140px]">${val}</p>
+                        <p class="text-sm text-slate-500 mt-1">${sub}</p>
+                        ${extraInfo}
+                    </div>
+                    <div class="p-2 rounded-lg bg-slate-50 text-slate-400">
+                        <i class="${icon} text-lg"></i>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Format Sharpe for display
+        const sharpeInfo = `<span class="inline-block mt-1 text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-medium" title="Sharpe Ratio (Return/Risk)">Sharpe: ${bestSig.sharpe.toFixed(2)}</span>`;
+
+        const html = [
+            createCard('Best Performance', bestSig.type, `Avg: ${bestSig.avg.toFixed(2)}%`, 'border-indigo-500', 'ph-trend-up', sharpeInfo),
+            createCard('Hidden Gem', bestStock.name, `Return: ${bestStock.retDisplay}`, 'border-emerald-500', 'ph-diamond'),
+            createCard('Max Drawdown', worstStock.name, `Return: ${worstStock.retDisplay}`, 'border-rose-500', 'ph-trend-down'),
+            createCard('Market Bias', bestSig.avg > 0 ? 'Bullish' : 'Bearish', bestSig.avg > 0 ? 'Positive Drift' : 'Negative Drift', bestSig.avg > 0 ? 'border-amber-500' : 'border-slate-500', 'ph-scales')
+        ].join('');
+
+        document.getElementById('kpiSection').innerHTML = html;
+    }
+
+    function renderTable(stocks) {
+        const tbody = document.getElementById('rankingBody');
+        tbody.innerHTML = stocks.map((row, idx) => `
+            <tr class="hover:bg-slate-50 transition-colors group">
+                <td class="px-6 py-4 font-medium text-slate-400 group-hover:text-indigo-600 transition-colors">#${idx + 1}</td>
+                <td class="px-6 py-4 text-slate-500">${row.date}</td>
+                <td class="px-6 py-4 font-semibold text-slate-800">${row.name}</td>
+                <td class="px-6 py-4"><span class="px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">${row.signal}</span></td>
+                <td class="px-6 py-4 text-right font-bold ${row.retVal >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${row.retVal >= 0 ? '+' : ''}${row.retDisplay}</td>
+            </tr>
+        `).join('');
+    }
+
+    function setStatus(type, msg) {
+        const el = document.getElementById('statusIndicator');
+        const dot = el.querySelector('span');
+        el.className = `hidden md:flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium ${
+            type === 'success' ? 'bg-green-100 text-green-700' : 
+            type === 'error' ? 'bg-rose-100 text-rose-700' : 
+            'bg-slate-100 text-slate-500'
+        }`;
+        dot.className = `w-2 h-2 rounded-full ${
+            type === 'success' ? 'bg-green-500 animate-pulse' : 
+            type === 'error' ? 'bg-rose-500' : 
+            'bg-slate-400'
+        }`;
+        el.innerHTML = '';
+        el.appendChild(dot);
+        el.appendChild(document.createTextNode(msg));
+    }
+
+    window.onload = init;
+
+</script>
+</body>
+</html>
