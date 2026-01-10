@@ -89,6 +89,10 @@
           </div>
 
           <div class="flex items-center gap-4">
+            <!-- Data Refresh Button (New) -->
+            <button onclick="fetchData()" class="p-2 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded-full transition-all" title="Refresh Data from Sheet">
+               <i class="ph ph-arrows-clockwise text-xl"></i>
+            </button>
             <div id="statusIndicator" class="hidden md:flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
               <span class="w-2 h-2 rounded-full bg-slate-400"></span> Initializing...
             </div>
@@ -114,6 +118,12 @@
           <h1 class="text-2xl font-bold text-slate-900 mb-3" id="reportTitle">Market Overview</h1>
           <div id="dynamicInsightText" class="text-slate-600 leading-relaxed relative z-10 min-h-[60px]">
             <span class="spinner mr-2"></span> 데이터를 분석하고 있습니다...
+          </div>
+          <!-- New Simulation Button -->
+          <div class="mt-4">
+             <button onclick="openAiSimulation()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-lg shadow-indigo-200 active:scale-95 transition-all flex items-center gap-2">
+                <i class="ph ph-robot text-lg"></i> ⚡ AI 최적 매매 타이밍 분석
+             </button>
           </div>
         </div>
 
@@ -353,6 +363,42 @@
         <button onclick="closeSimModal()" class="mt-6 w-full bg-slate-900 hover:bg-slate-800 text-white py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-indigo-500/20">Close Simulation</button>
       </div>
     </div>
+
+    <!-- AI Simulation Modal (New) -->
+    <div id="aiSimModal" class="fixed inset-0 bg-slate-900/60 z-[110] hidden flex items-center justify-center backdrop-blur-sm transition-opacity opacity-0 pointer-events-none" style="transition: opacity 0.2s;">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl mx-4 transform transition-all scale-95 flex flex-col max-h-[90vh]" id="aiSimContent">
+        <div class="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-indigo-50/50 rounded-t-2xl">
+          <div class="flex items-center gap-3">
+             <div class="bg-white p-2 rounded-lg shadow-sm">
+                <i class="ph ph-robot text-2xl text-indigo-600"></i>
+             </div>
+             <div>
+                <h3 class="text-xl font-bold text-slate-900">AI Optimal Trading Analysis</h3>
+                <p class="text-xs text-slate-500 mt-0.5">Top 10 Selection & Best Exit Strategy Simulation</p>
+             </div>
+          </div>
+          <button onclick="closeAiSimulation()" class="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-white hover:shadow-sm transition-all">
+            <i class="ph ph-x text-xl"></i>
+          </button>
+        </div>
+        
+        <div class="flex-1 overflow-y-auto p-6 bg-slate-50/50">
+           <div id="aiSimResults" class="grid grid-cols-1 gap-6">
+              <!-- Content will be injected here -->
+              <div class="flex justify-center items-center h-40">
+                 <span class="spinner"></span>
+              </div>
+           </div>
+        </div>
+
+        <div class="px-6 py-4 border-t border-slate-100 bg-white rounded-b-2xl flex justify-end">
+           <button onclick="closeAiSimulation()" class="px-5 py-2.5 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200">
+              Close Report
+           </button>
+        </div>
+      </div>
+    </div>
+
   </div>
 
 <script>
@@ -375,6 +421,7 @@
   let activeRegimeFilter = null; // New filter state
   let currentPerfMode = 'return';
   let cachedSignalStats = [];
+  let globalAllData = []; // Store raw data for simulation
 
   // --- PASSWORD LOGIC ---
   function checkPassword() {
@@ -464,11 +511,11 @@
       const rsi = toNum(row['RSI14'] || row['RSI'], 50);
       const stoch = toNum(row['Stoch_K'] || row['Stochastic'] || row['Stoch'], 50);
       
-      const d1 = toNum(findCol(row, ['D1','Return_D1','d1']), null);
-      const d3 = toNum(findCol(row, ['D3','Return_D3','d3']), null);
-      const d5 = toNum(findCol(row, ['D5','Return_D5','d5']), null);
-      const d7 = toNum(findCol(row, ['D7','Return_D7','d7']), null);
-      const d9 = toNum(findCol(row, ['D9','Return_D9','d9']), null);
+      const d1 = toNum(findCol(row, ['D1','Return_D1','d1']), 0);
+      const d3 = toNum(findCol(row, ['D3','Return_D3','d3']), 0);
+      const d5 = toNum(findCol(row, ['D5','Return_D5','d5']), 0);
+      const d7 = toNum(findCol(row, ['D7','Return_D7','d7']), 0);
+      const d9 = toNum(findCol(row, ['D9','Return_D9','d9']), 0);
 
       const retVal = toNum(row['Return'] || row['수익률'] || 0, 0);
 
@@ -485,6 +532,7 @@
       return;
     }
 
+    globalAllData = cleanedData; // Save for simulation
     setStatus('success', isDemo ? 'Demo Mode' : 'Live Connected');
     updateDashboard(cleanedData);
   }
@@ -624,6 +672,178 @@
     renderSeasonalityChart(dateStats); 
   }
 
+  // --- NEW AI SIMULATION LOGIC ---
+  function openAiSimulation() {
+    const modal = document.getElementById('aiSimModal');
+    const modalContent = document.getElementById('aiSimContent');
+    modal.classList.remove('hidden');
+    
+    setTimeout(() => {
+        modal.classList.remove('opacity-0', 'pointer-events-none');
+        modalContent.classList.remove('scale-95');
+        modalContent.classList.add('scale-100');
+    }, 10);
+
+    runSimulationAnalysis();
+  }
+
+  function closeAiSimulation() {
+    const modal = document.getElementById('aiSimModal');
+    const modalContent = document.getElementById('aiSimContent');
+    
+    modal.classList.add('opacity-0', 'pointer-events-none');
+    modalContent.classList.remove('scale-100');
+    modalContent.classList.add('scale-95');
+    
+    setTimeout(() => { modal.classList.add('hidden'); }, 200);
+  }
+
+  function runSimulationAnalysis() {
+    const container = document.getElementById('aiSimResults');
+    const strategies = ['Breakout', 'Pullback', 'Trend'];
+    let html = '';
+
+    const matchSignal = (dataSignal, targetType) => {
+        const s = (dataSignal || '').toLowerCase();
+        const t = targetType.toLowerCase();
+        if (t === 'breakout') return s.includes('breakout') || s.includes('돌파');
+        if (t === 'pullback') return s.includes('pullback') || s.includes('눌림');
+        if (t === 'trend') return s.includes('trend') || s.includes('추세');
+        return s.includes(t);
+    };
+
+    // Calculate max drawdown over D1-D9 for a single stock
+    const calcMaxDD = (d) => {
+       const vals = [0, d.d1, d.d3, d.d5, d.d7, d.d9]; // Start from 0
+       let peak = -9999;
+       let maxDD = 0;
+       vals.forEach(v => {
+          if (v > peak) peak = v;
+          const dd = peak - v;
+          if (dd > maxDD) maxDD = dd;
+       });
+       return maxDD;
+    };
+
+    // Find Best Exit Day for a group of stocks
+    const findBestExit = (group) => {
+        if(group.length === 0) return { day: '-', ret: 0 };
+        const avgs = {
+            'D1': group.reduce((a,b) => a + b.d1, 0) / group.length,
+            'D3': group.reduce((a,b) => a + b.d3, 0) / group.length,
+            'D5': group.reduce((a,b) => a + b.d5, 0) / group.length,
+            'D7': group.reduce((a,b) => a + b.d7, 0) / group.length,
+            'D9': group.reduce((a,b) => a + b.d9, 0) / group.length,
+        };
+        let maxDay = 'D9';
+        let maxVal = -9999;
+        Object.entries(avgs).forEach(([k, v]) => {
+            if(v > maxVal) { maxVal = v; maxDay = k; }
+        });
+        return { day: maxDay, ret: maxVal };
+    };
+
+    strategies.forEach(strat => {
+        const data = globalAllData.filter(d => matchSignal(d.signal, strat));
+        if (data.length === 0) return;
+
+        // 1. Top 10 by Profit (High Return)
+        const topProfit = [...data].sort((a,b) => b.retVal - a.retVal).slice(0, 10);
+        const bestExitProfit = findBestExit(topProfit);
+
+        // 2. Top 10 by Stability (Lowest Max Drawdown among profitable stocks)
+        // Filter only profitable ones first to find "Stable Winners"
+        const profitable = data.filter(d => d.retVal > 0);
+        const topStable = [...profitable].sort((a,b) => calcMaxDD(a) - calcMaxDD(b)).slice(0, 10);
+        const bestExitStable = findBestExit(topStable);
+
+        const renderStockList = (list) => list.map((s, i) => 
+            `<span class="inline-block bg-white border border-slate-200 rounded px-1.5 py-0.5 text-[10px] text-slate-600 mr-1 mb-1">
+               ${i+1}. ${s.name} (${s.retDisplay})
+             </span>`
+        ).join('');
+
+        // Badge Color
+        let badgeClass = 'bg-slate-100 text-slate-600';
+        if(strat === 'Breakout') badgeClass = 'bg-cyan-100 text-cyan-700';
+        if(strat === 'Pullback') badgeClass = 'bg-indigo-100 text-indigo-700';
+        if(strat === 'Trend') badgeClass = 'bg-purple-100 text-purple-700';
+
+        html += `
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <span class="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${badgeClass}">${strat} Strategy</span>
+                    <span class="text-xs text-slate-400 font-medium">${data.length} Signals</span>
+                </div>
+            </div>
+            
+            <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- Profit Group -->
+                <div class="relative">
+                    <div class="absolute -top-3 -left-3 bg-emerald-100 text-emerald-700 p-1.5 rounded-lg">
+                        <i class="ph ph-trend-up text-xl"></i>
+                    </div>
+                    <div class="pl-8">
+                        <h4 class="text-sm font-bold text-slate-900 mb-1">🎯 High Profit Group (Top 10)</h4>
+                        <p class="text-xs text-slate-500 mb-4">Highest total returns in the dataset.</p>
+                        
+                        <div class="bg-emerald-50 rounded-lg p-4 border border-emerald-100 mb-4">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-xs font-bold text-emerald-800 uppercase">Golden Exit Time</span>
+                                <span class="text-lg font-black text-emerald-600">${bestExitProfit.day}</span>
+                            </div>
+                            <p class="text-xs text-emerald-700 leading-relaxed">
+                                Buying on signal and selling on <strong>${bestExitProfit.day}</strong> yields an avg return of 
+                                <span class="font-bold underline">${bestExitProfit.ret.toFixed(2)}%</span> for this group.
+                            </p>
+                        </div>
+                        
+                        <div>
+                           <p class="text-[10px] text-slate-400 font-bold uppercase mb-2">Selected Stocks</p>
+                           <div class="flex flex-wrap">${renderStockList(topProfit)}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stability Group -->
+                <div class="relative border-t md:border-t-0 md:border-l border-slate-100 pt-6 md:pt-0 md:pl-8">
+                    <div class="absolute -top-3 -left-3 md:left-5 bg-blue-100 text-blue-700 p-1.5 rounded-lg">
+                        <i class="ph ph-shield-check text-xl"></i>
+                    </div>
+                    <div class="pl-8">
+                        <h4 class="text-sm font-bold text-slate-900 mb-1">🛡️ High Stability Group (Top 10)</h4>
+                        <p class="text-xs text-slate-500 mb-4">Lowest drawdown among profitable trades.</p>
+                        
+                        <div class="bg-blue-50 rounded-lg p-4 border border-blue-100 mb-4">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-xs font-bold text-blue-800 uppercase">Golden Exit Time</span>
+                                <span class="text-lg font-black text-blue-600">${bestExitStable.day}</span>
+                            </div>
+                            <p class="text-xs text-blue-700 leading-relaxed">
+                                For stable growth, holding until <strong>${bestExitStable.day}</strong> maximizes efficiency with 
+                                <span class="font-bold underline">${bestExitStable.ret.toFixed(2)}%</span> avg return.
+                            </p>
+                        </div>
+
+                        <div>
+                           <p class="text-[10px] text-slate-400 font-bold uppercase mb-2">Selected Stocks</p>
+                           <div class="flex flex-wrap">${renderStockList(topStable)}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        `;
+    });
+
+    if (html === '') {
+        container.innerHTML = '<p class="text-center text-slate-500 py-10">Not enough data to run simulation.</p>';
+    } else {
+        container.innerHTML = html;
+    }
+  }
+
   // --- CHART RENDERING FUNCTIONS ---
 
   function renderKPIs(bestSig, worstSig, bestStock, worstStock, allData) {
@@ -648,7 +868,7 @@
     document.getElementById('kpiSection').innerHTML = `
       <div class="glass-panel p-4 rounded-xl border-l-4 border-indigo-500 flex justify-between items-center group">
         <div>
-           <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Best Performance</p>
+           <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Best Signal</p>
            <p class="text-xl font-bold text-slate-800 mt-1 truncate" title="${bestSig.type}">${bestSig.type}</p>
            <p class="text-sm text-slate-500 mt-1">Avg: ${bestSig.avg.toFixed(2)}%</p>
         </div>
@@ -659,7 +879,7 @@
       </div>
       <div class="glass-panel p-4 rounded-xl border-l-4 border-emerald-500 flex justify-between items-center group">
         <div>
-           <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Hidden Gem</p>
+           <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Top 3</p>
            <p class="text-xl font-bold text-slate-800 mt-1 truncate max-w-[110px]" title="${bestStock?.name}">${bestStock?.name || '-'}</p>
            <p class="text-sm text-slate-500 mt-1">Return: ${bestStock?.retDisplay || '0.00%'}</p>
         </div>
@@ -670,7 +890,7 @@
       </div>
       <div class="glass-panel p-4 rounded-xl border-l-4 border-rose-500 flex justify-between items-center group">
         <div>
-           <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Max Drawdown</p>
+           <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Botton 3</p>
            <p class="text-xl font-bold text-slate-800 mt-1 truncate max-w-[110px]" title="${worstStock?.name}">${worstStock?.name || '-'}</p>
            <p class="text-sm text-slate-500 mt-1">Return: ${worstStock?.retDisplay || '0.00%'}</p>
         </div>
